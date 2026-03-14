@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live AQI Predictor</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; text-align: center; background-color: #f4f7f6; }
+        .container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 0px 10px rgba(0,0,0,0.1); display: inline-block; max-width: 600px; }
+        .camera-box { margin: 15px 0; }
+        video { width: 100%; max-width: 400px; border: 2px solid #333; border-radius: 8px; }
+        .input-group { margin: 10px 0; display: flex; justify-content: space-between; }
+        input[type="number"] { width: 60px; padding: 5px; }
+        button { background-color: #27ae60; color: white; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; margin-top: 10px; }
+        button:hover { background-color: #2ecc71; }
+        .capture-btn { background-color: #2980b9; }
+        .capture-btn:hover { background-color: #3498db; }
+        canvas { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🌍 Live AQI Predictor</h2>
+    
+    <form action="/predict" method="POST" enctype="multipart/form-data" id="aqiForm">
+        
+        <div class="camera-box">
+            <p><strong>Option 1:</strong> Take a Live Photo</p>
+            <video id="webcam" autoplay playsinline></video>
+            <br>
+            <button type="button" class="capture-btn" id="captureBtn">📸 Snap Photo</button>
+            <p id="snapMessage" style="color: green; font-weight: bold; display: none;">Photo Captured! ✅</p>
+            
+            <canvas id="canvas"></canvas>
+            <input type="hidden" name="camera_image" id="camera_image">
+        </div>
+
+        <hr>
+
+        <div>
+            <p><strong>Option 2:</strong> Upload an Image</p>
+            <input type="file" name="file" accept="image/*">
+        </div>
+
+        <hr>
+
+        <h3>Enter Air Quality Metrics:</h3>
+        <div class="input-group"><label>PM2.5:</label><input type="number" step="0.1" name="pm25" required value="45.2"></div>
+        <div class="input-group"><label>PM10:</label><input type="number" step="0.1" name="pm10" required value="78.1"></div>
+        <div class="input-group"><label>O3:</label><input type="number" step="0.1" name="o3" required value="12.5"></div>
+        <div class="input-group"><label>CO:</label><input type="number" step="0.1" name="co" required value="0.8"></div>
+        <div class="input-group"><label>SO2:</label><input type="number" step="0.1" name="so2" required value="5.2"></div>
+        <div class="input-group"><label>NO2:</label><input type="number" step="0.1" name="no2" required value="22.1"></div>
+
+        <button type="submit">🚀 Predict AQI</button>
+    </form>
+</div>
+
+<script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const captureBtn = document.getElementById('captureBtn');
+    const cameraImageInput = document.getElementById('camera_image');
+    const snapMessage = document.getElementById('snapMessage');
+
+    // Start the webcam
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => { video.srcObject = stream; })
+        .catch(err => { console.error("Camera access denied or unavailable:", err); });
+
+    // Capture photo when button is clicked
+    captureBtn.addEventListener('click', () => {
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Convert the canvas picture to a Base64 string and put it in the hidden input
+        const imageData = canvas.toDataURL('image/jpeg');
+        cameraImageInput.value = imageData;
+        
+        snapMessage.style.display = "block"; // Show success message
+    });
+</script>
+
+</body>
+</html>
