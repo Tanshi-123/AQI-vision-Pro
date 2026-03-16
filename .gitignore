@@ -1,0 +1,12 @@
+# Ignore the virtual environment
+venv/
+__pycache__/
+
+# Ignore the massive image dataset (GitHub will block files over 100MB)
+data/
+
+# Ignore the heavy model files (optional, but recommended)
+models/
+
+# Ignore Jupyter notebook checkpoints
+.ipynb_checkpoints/
