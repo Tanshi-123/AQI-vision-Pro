@@ -1,12 +1,29 @@
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 import cv2
 import os
 import requests
 from geopy.geocoders import Nominatim
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 # --- CONFIGURATION ---
-API_KEY = "aa3f8be4d56a2dc8d99f5d632745ebcc"  # <--- Put your key here
+API_KEY = "aa3f8be4d56a2dc8d99f5d632745ebcc"  # Your API Key
+
+def setup_prediction_environment():
+    print("⚙️ Setting up scalers and labels from training data...")
+    train_df = pd.read_csv("new_imd_train_data.csv")
+    
+    # 1. Setup Label Encoder (To map 0,1,2,3,4,5 to the exact text labels)
+    le = LabelEncoder()
+    le.fit(train_df['AQI_Class'])
+    
+    # 2. Setup StandardScaler
+    scaler = StandardScaler()
+    numeric_cols = ['PM2.5', 'PM10', 'CO', 'NO2', 'SO2', 'O3']
+    scaler.fit(train_df[numeric_cols].fillna(0))
+    
+    return le, scaler
 
 def get_live_metrics(city_name):
     """Fetches real-time AQI metrics for a given city."""
@@ -28,15 +45,15 @@ def get_live_metrics(city_name):
             
         comps = response['list'][0]['components']
         
-        # 3. Extract pollutants in the exact order your model expects:
-        # Order: [PM2.5, PM10, O3, CO, SO2, NO2]
+        # 3. Extract pollutants in the EXACT order the model was trained on!
+        # Order: ['PM2.5', 'PM10', 'CO', 'NO2', 'SO2', 'O3']
         metrics = [
             comps['pm2_5'], 
             comps['pm10'], 
-            comps['o3'], 
             comps['co'], 
+            comps['no2'], 
             comps['so2'], 
-            comps['no2']
+            comps['o3']
         ]
         
         print(f"✅ Fetched live metrics for {city_name}: {metrics}")
@@ -51,40 +68,50 @@ def prepare_image(image_path, img_size=224):
     if img is None: return None
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.resize(img, (img_size, img_size))
-    return np.expand_dims(img / 255.0, axis=0)
+    
+    # EXACT mathematical preprocessing used during training
+    img_array = (img / 127.5) - 1.0  
+    return np.expand_dims(img_array, axis=0) # Shape: (1, 224, 224, 3)
 
-def predict_aqi_auto(image_path, city_name, model_path='models/multimodal_model.keras'):
+def predict_aqi_auto(image_path, city_name, model, le, scaler):
     # 1. Get Metrics Automatically
     sensor_data = get_live_metrics(city_name)
     if not sensor_data: return
 
-    # 2. Load Model
-    if not os.path.exists(model_path):
-        print("❌ Model file not found!")
-        return
-    model = tf.keras.models.load_model(model_path)
-
-    # 3. Prep Inputs
+    # 2. Prep Inputs
     image_input = prepare_image(image_path)
     if image_input is None:
         print("❌ Image file not found!")
         return
-    numeric_input = np.array(sensor_data).reshape(1, 1, 6)
+        
+    # Scale the numbers using the training scaler!
+    raw_numbers = pd.DataFrame([sensor_data], columns=['PM2.5', 'PM10', 'CO', 'NO2', 'SO2', 'O3'])
+    scaled_numbers = scaler.transform(raw_numbers)
 
-    # 4. Predict
-    predictions = model.predict([image_input, numeric_input])
-    classes = ['Good', 'Moderate', 'Poor', 'Severe', 'Unhealthy', 'Very Unhealthy']
-    class_idx = np.argmax(predictions)
+    # 3. Predict
+    predictions = model.predict([image_input, scaled_numbers], verbose=0)
+    class_idx = np.argmax(predictions, axis=1)[0]
     
-    print("\n" + "="*30)
+    predicted_class = le.inverse_transform([class_idx])[0]
+    confidence = predictions[0][class_idx] * 100
+    
+    print("\n" + "="*40)
     print(f"📍 Location: {city_name}")
-    print(f"🌍 AI Prediction: {classes[class_idx]}")
-    print(f"📊 Confidence: {predictions[0][class_idx]*100:.1f}%")
-    print("="*30)
+    print(f"🖼️ Image: {os.path.basename(image_path)}")
+    print(f"🌍 AI Prediction: {predicted_class.upper()}")
+    print(f"📊 Confidence: {confidence:.2f}%")
+    print("="*40 + "\n")
 
 if __name__ == "__main__":
-    # TO TEST: 
-    # 1. Update your API_KEY
-    # 2. Provide an image path and a city name
-    img = r"C:\Users\HP\Desktop\AQI_prediction\data\Air Pollution Image Dataset\Air Pollution Image Dataset\Combined_Dataset\All_img\DEL_VUH_2023-02-04-17.00-2-2.jpg"
-    predict_aqi_auto(img, "Delhi")
+    # You will need to install geopy if you haven't yet:
+    # pip install geopy requests
+    
+    print("🧠 Loading the 93% accuracy model...")
+    model = tf.keras.models.load_model('models/multimodal_model.keras')
+    
+    le, scaler = setup_prediction_environment()
+    
+    # Let's test Delhi!
+    img = r"C:\Users\HP\Desktop\AQI-vision-Pro\data\Air Pollution Image Dataset\Air Pollution Image Dataset\Combined_Dataset\All_img\DEL_VUH_2023-02-04-17.00-2-2.jpg"
+    
+    predict_aqi_auto(img, "Delhi", model, le, scaler)
